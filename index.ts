@@ -10,6 +10,7 @@ export class Peer {
   private channel;
   constructor(opt: Options) {
     this.options = opt;
+    const { stream, initiator } = this.options;
 
     this.peer = new RTCPeerConnection({
       iceServers: [
@@ -18,19 +19,19 @@ export class Peer {
       ],
     });
 
-    if (this.options.stream) {
+    if (stream) {
       this.options.stream
         .getTracks()
-        .forEach((track) => this.peer.addTrack(track, this.options.stream!));
+        .forEach((track) => this.peer.addTrack(track, stream));
     }
 
     // For initiator peer
-    if (this.options.initiator) {
+    if (initiator) {
       this.channel = this.peer.createDataChannel("dataChannel");
     }
 
-    // For reciver peer
-    if (!this.options.initiator) {
+    // For receiver peer
+    if (!initiator) {
       this.peer.ondatachannel = (e) => {
         this.channel = e.channel;
       };
@@ -92,12 +93,6 @@ export class Peer {
   onStream(FnCallBack: (stream: MediaStream) => any) {
     this.peer.ontrack = (e) => FnCallBack(e.streams[0]);
   }
-  emitMute() {
-    if (this.channel) this.channel.send("mute");
-  }
-  emitUnmute() {
-    if (this.channel) this.channel.send("unmute");
-  }
 
   onMessage(FnCallBack: (message: string) => any) {
     const checkIfthereIsChannel = setInterval(() => {
@@ -108,6 +103,13 @@ export class Peer {
     }, 1000);
   }
 
+  emitMute() {
+    if (this.channel) this.channel.send("mute");
+  }
+
+  emitUnmute() {
+    if (this.channel) this.channel.send("unmute");
+  }
   close() {
     this.peer.close();
   }
