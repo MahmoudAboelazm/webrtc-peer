@@ -2,15 +2,17 @@ interface Options {
   initiator: boolean;
   stream?: MediaStream;
 }
-
+interface OnEvent {
+  [k: string]: Function[];
+}
 export class Peer {
   private options: Options = { initiator: true };
   private peer;
-  private candidate!: RTCIceCandidate | null;
-  private channel;
+  private dataChannel;
+  private candidate: RTCIceCandidate | null;
+  private onEvent: OnEvent = {};
   constructor(opt: Options) {
     this.options = opt;
-    const { stream, initiator } = this.options;
 
     this.peer = new RTCPeerConnection({
       iceServers: [
@@ -19,23 +21,40 @@ export class Peer {
       ],
     });
 
-    if (stream) {
+    if (this.options.stream) {
       this.options.stream
         .getTracks()
-        .forEach((track) => this.peer.addTrack(track, stream));
+        .forEach((track) => this.peer.addTrack(track, this.options.stream!));
     }
 
-    // For initiator peer
-    if (initiator) {
-      this.channel = this.peer.createDataChannel("dataChannel");
+    // for initiator
+    if (this.options.initiator) {
+      this.dataChannel = this.peer.createDataChannel("dataChannel");
     }
 
-    // For receiver peer
-    if (!initiator) {
+    // for remote peer
+    if (!this.options.initiator) {
       this.peer.ondatachannel = (e) => {
-        this.channel = e.channel;
+        this.dataChannel = e.channel;
       };
     }
+
+    const checkIfthereIsChannel = setInterval(() => {
+      if (this.dataChannel) {
+        this.dataChannel.onmessage = (e) => {
+          if (this.onEvent["onMessage"]) {
+            const fnCallBacks = this.onEvent["onMessage"];
+            fnCallBacks.map((fn) => fn(e.data));
+          }
+
+          if (this.onEvent[e.data]) {
+            const fnCallBacks = this.onEvent[e.data];
+            fnCallBacks.map((fn) => fn());
+          }
+        };
+        clearInterval(checkIfthereIsChannel);
+      }
+    }, 1000);
   }
 
   onSignal(FnCallBack: (signal: string) => any) {
@@ -94,22 +113,29 @@ export class Peer {
     this.peer.ontrack = (e) => FnCallBack(e.streams[0]);
   }
 
+  // to listen for all messages and events.
   onMessage(FnCallBack: (message: string) => any) {
-    const checkIfthereIsChannel = setInterval(() => {
-      if (this.channel) {
-        this.channel.onmessage = (e) => FnCallBack(e.data);
-        clearInterval(checkIfthereIsChannel);
-      }
-    }, 1000);
+    if (this.onEvent["onMessage"]) {
+      this.onEvent["onMessage"].push(FnCallBack);
+    } else {
+      this.onEvent["onMessage"] = [FnCallBack];
+    }
   }
 
-  emitMute() {
-    if (this.channel) this.channel.send("mute");
+  // to listen for a special event
+  on(event: string, FnCallBack: () => any) {
+    if (this.onEvent[event]) {
+      this.onEvent[event].push(FnCallBack);
+    } else {
+      this.onEvent[event] = [FnCallBack];
+    }
   }
 
-  emitUnmute() {
-    if (this.channel) this.channel.send("unmute");
+  // to emit messages and events
+  emit(msg: string) {
+    if (this.dataChannel) this.dataChannel.send(msg);
   }
+
   close() {
     this.peer.close();
   }
