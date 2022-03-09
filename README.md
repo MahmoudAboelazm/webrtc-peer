@@ -63,6 +63,6 @@ peer.onMessage((msg) => {
 
 // To listen for a special event
 peer.on("event", () => {
-  // Do some thing here
+  // Do something here
 });
 ```
