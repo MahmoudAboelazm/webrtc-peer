@@ -9,16 +9,13 @@ export class Peer {
   private options: Options = { initiator: true };
   private peer;
   private dataChannel;
-  private candidate: RTCIceCandidate | null;
+  private candidates: RTCIceCandidate[] = [];
   private onEvent: OnEvent = {};
   constructor(opt: Options) {
     this.options = opt;
 
     this.peer = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-      ],
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
 
     if (this.options.stream) {
@@ -56,40 +53,35 @@ export class Peer {
       }
     }, 1000);
   }
+  getIceCandidates(signalCallBack: (signal: string) => any) {
+    this.peer.onicecandidate = (e) => {
+      if (e.candidate === null) {
+        const mySignal = {
+          sdp: this.peer.localDescription,
+          candidates: this.candidates,
+        };
+        signalCallBack(JSON.stringify(mySignal));
+        return;
+      }
 
-  onSignal(FnCallBack: (signal: string) => any) {
+      this.candidates.push(e.candidate);
+    };
+  }
+  onSignal(fnCallBack: (signal: string) => any) {
     try {
       if (this.options.initiator) {
         this.peer.createOffer().then((offer) => {
-          this.peer.setLocalDescription(offer).then(() => {
-            this.peer.onicecandidate = (e) => {
-              if (!this.candidate) {
-                this.candidate = e.candidate;
-                const mySignal = {
-                  sdp: this.peer.localDescription,
-                  candidate: this.candidate,
-                };
-                FnCallBack(JSON.stringify(mySignal));
-              }
-            };
-          });
+          this.peer
+            .setLocalDescription(offer)
+            .then(() => this.getIceCandidates(fnCallBack));
         });
       }
 
       if (!this.options.initiator) {
         this.peer.createAnswer().then((answer) => {
-          this.peer.setLocalDescription(answer).then(() => {
-            this.peer.onicecandidate = (e) => {
-              if (!this.candidate) {
-                this.candidate = e.candidate;
-                const mySignal = {
-                  sdp: this.peer.localDescription,
-                  candidate: this.candidate,
-                };
-                FnCallBack(JSON.stringify(mySignal));
-              }
-            };
-          });
+          this.peer
+            .setLocalDescription(answer)
+            .then(() => this.getIceCandidates(fnCallBack));
         });
       }
     } catch (error: any) {
@@ -99,35 +91,39 @@ export class Peer {
 
   async setSignal(signal: string) {
     try {
-      const signalObj = await JSON.parse(signal);
-      this.peer
-        .setRemoteDescription(signalObj.sdp)
-        .then(() =>
-          this.peer.addIceCandidate(new RTCIceCandidate(signalObj.candidate)),
-        );
+      const signalObj: {
+        sdp: RTCSessionDescription;
+        candidates: RTCIceCandidate[];
+      } = await JSON.parse(signal);
+
+      this.peer.setRemoteDescription(signalObj.sdp).then(() => {
+        signalObj.candidates.forEach((c) => {
+          this.peer.addIceCandidate(new RTCIceCandidate(c));
+        });
+      });
     } catch (error: any) {
       console.log("setSignal Error: ", error.message);
     }
   }
-  onStream(FnCallBack: (stream: MediaStream) => any) {
-    this.peer.ontrack = (e) => FnCallBack(e.streams[0]);
+  onStream(fnCallBack: (stream: MediaStream) => any) {
+    this.peer.ontrack = (e) => fnCallBack(e.streams[0]);
   }
 
   // to listen for all messages and events.
-  onMessage(FnCallBack: (message: string) => any) {
+  onMessage(fnCallBack: (message: string) => any) {
     if (this.onEvent["onMessage"]) {
-      this.onEvent["onMessage"].push(FnCallBack);
+      this.onEvent["onMessage"].push(fnCallBack);
     } else {
-      this.onEvent["onMessage"] = [FnCallBack];
+      this.onEvent["onMessage"] = [fnCallBack];
     }
   }
 
   // to listen for a special event
-  on(event: string, FnCallBack: () => any) {
+  on(event: string, fnCallBack: () => any) {
     if (this.onEvent[event]) {
-      this.onEvent[event].push(FnCallBack);
+      this.onEvent[event].push(fnCallBack);
     } else {
-      this.onEvent[event] = [FnCallBack];
+      this.onEvent[event] = [fnCallBack];
     }
   }
 
