@@ -7,8 +7,8 @@ interface OnEvent {
 }
 export class Peer {
   private options: Options = { initiator: true };
-  private peer;
-  private dataChannel;
+  private peer: RTCPeerConnection;
+  private dataChannel: RTCDataChannel | undefined;
   private candidates: RTCIceCandidate[] = [];
   private onEvent: OnEvent = {};
   constructor(opt: Options) {
@@ -129,7 +129,9 @@ export class Peer {
 
   // to emit messages and events
   emit(msg: string) {
-    if (this.dataChannel) this.dataChannel.send(msg);
+    if (this.dataChannel) {
+      if (this.dataChannel.readyState === "open") this.dataChannel.send(msg);
+    }
   }
 
   close() {
